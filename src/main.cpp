@@ -3,7 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <utility>
-// #include <unordered_set>
+#include <unordered_set>
 
 #include <SDL2/SDL.h>
 
@@ -22,7 +22,7 @@ class LifeGame : public Game {
         bool drawing;
         bool penIsBlack;
         std::vector<char> grid;
-        // std::unordered_set<char*> toCompute;
+        std::unordered_set<int> toCompute;
         void handleInput(const SDL_Event&);
         void computeLife();
         void updateDisplay();
@@ -32,8 +32,29 @@ class LifeGame : public Game {
         void set(int = 0, int = 0, bool = false);
 };
 
-LifeGame::LifeGame(int width, int height, int framerate, int _gridWidth, int _gridHeight): Game(width, height, framerate), gridWidth(_gridWidth), gridHeight(_gridHeight), grid(_gridWidth * _gridHeight, 0), evolve(false), drawing(false), penIsBlack(false), ratioY(gameWindowHeight / gridHeight), ratioX((gameWindowWidth / gridWidth)) {
+LifeGame::LifeGame(int width, int height, int framerate, int _gridWidth, int _gridHeight): Game(width, height, framerate), gridWidth(_gridWidth), gridHeight(_gridHeight), grid(_gridWidth * _gridHeight, 0), evolve(false), drawing(false), penIsBlack(false), ratioY(height / _gridHeight), ratioX((width / _gridWidth)) {
     setup();
+
+    SDL_Rect rect {
+      .x = 0,
+      .y = 0,
+      .w = ratioX-1,
+      .h = ratioY-1
+    };
+    
+    SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 1);
+    SDL_RenderClear(m_renderer);
+    SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 1);
+    
+    char* cellPointer = grid.data();
+    
+    for (int row = 0; row < gridHeight; row++, rect.x=0, rect.y+=ratioY) {
+        
+        for (int column = 0; column < gridWidth; column++, rect.x+=ratioX, cellPointer++) {
+            SDL_RenderFillRect(m_renderer, &rect);
+        }
+    }
+
 }
 
 void LifeGame::update() {
@@ -44,10 +65,11 @@ void LifeGame::update() {
         computeLife();
     }
     
-    updateDisplay();
+    // updateDisplay();
 
 }
 
+// Useless now
 void LifeGame::updateDisplay() {
   
   SDL_Rect rect {
@@ -62,9 +84,9 @@ void LifeGame::updateDisplay() {
   
   char* cellPointer = grid.data();
   
-  for (int row = 0; row < gridHeight; row++, rect.x=0, rect.y++) {
+  for (int row = 0; row < gridHeight; row++, rect.x=0, rect.y+=ratioY) {
       
-      for (int column = 0; column < gridWidth; column++, rect.x++, cellPointer++) {
+      for (int column = 0; column < gridWidth; column++, rect.x+=ratioX, cellPointer++) {
           
           if(*cellPointer & 1) {
               SDL_SetRenderDrawColor(m_renderer, 0, 0, 255, 1);
@@ -79,52 +101,86 @@ void LifeGame::updateDisplay() {
 
 void LifeGame::set(int row, int column, bool value) {
   int valueToAdd = 0;
-  char* cellPointer = grid.data() + row * gridWidth + column;
+  int coordinate = row * gridWidth + column;
+  char* cellPointer = grid.data() + coordinate;
+  toCompute.insert(coordinate);
+
+  SDL_Rect rect {
+    .x = column * ratioX,
+    .y = row * ratioY,
+    .w = ratioX-1,
+    .h = ratioY-1
+  };
   
   if(value) {
     *cellPointer |= 1; // Set the low bit to 1
     valueToAdd = 2;
+    SDL_SetRenderDrawColor(m_renderer, 0, 0, 255, 1);
   } else {
     *cellPointer &= 0xFE; // Set the low bit to 0
     valueToAdd = -2;
+    SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 1);
   }
+  SDL_RenderFillRect(m_renderer, &rect);
   
   // Top
   if(row > 0) {
     
     char* rowPointer = cellPointer - gridWidth;
+    int index = coordinate - gridWidth;
     
     // Middle
     *rowPointer += valueToAdd;
+    toCompute.insert(index);
     
     // Left
-    *(rowPointer - 1) += valueToAdd;
+    if(column > 0) {
+      *(rowPointer - 1) += valueToAdd;
+      toCompute.insert(index - 1);
+    }
     
     // Right
-    *(rowPointer + 1) += valueToAdd;
+    if(column + 1 < gridWidth) {
+      *(rowPointer + 1) += valueToAdd;
+      toCompute.insert(index + 1);
+    }
     
   }
   
   if (row + 1 < gridHeight) {
     
     char* rowPointer = cellPointer + gridWidth;
+    int index = coordinate + gridWidth;
     
     // Middle
     *rowPointer += valueToAdd;
+    toCompute.insert(index);
     
     // Left
-    *(rowPointer - 1) += valueToAdd;
+    if(column > 0) {
+      *(rowPointer - 1) += valueToAdd;
+      toCompute.insert(index - 1);
+    }
     
     // Right
-    *(rowPointer + 1) += valueToAdd;
+    if(column + 1 < gridWidth) {
+      *(rowPointer + 1) += valueToAdd;
+      toCompute.insert(index + 1);
+    }
 
   }
   
   // Left
-  *(cellPointer - 1) += valueToAdd;
+  if(column > 0) {
+    *(cellPointer - 1) += valueToAdd;
+    toCompute.insert(coordinate - 1);
+  }
   
   // Right
-  *(cellPointer + 1) += valueToAdd;
+  if(column + 1 < gridWidth) {
+    *(cellPointer + 1) += valueToAdd;
+    toCompute.insert(coordinate + 1);
+  }
   
 }
 
@@ -186,8 +242,8 @@ void LifeGame::handleInput(const SDL_Event& event) {
 
 void LifeGame::computeLife() {
   
-    std::vector<char> copyGrid(grid);
-    char* cellPointer = copyGrid.data();
+    std::vector<char> copyGrid(grid); // Here the copy is probably extremely expensive
+    char* copyGridPointer = copyGrid.data();
     
     int neighborsCount = 0;
     
@@ -195,14 +251,14 @@ void LifeGame::computeLife() {
       
       for(int column = 0; column < gridWidth; column++) {
         
-        while((*cellPointer) == 0) {
-          cellPointer++;
+        while((*copyGridPointer) == 0) {
+          copyGridPointer++;
           if(++column >= gridWidth) goto rowDone;
         }
         
-        neighborsCount = (*cellPointer) >> 1;
+        neighborsCount = (*copyGridPointer) >> 1;
         
-        if((*cellPointer) & 1) {
+        if((*copyGridPointer) & 1) {
           if(neighborsCount != 2 && neighborsCount != 3) {
             set(row, column, false);
           }
@@ -212,18 +268,48 @@ void LifeGame::computeLife() {
           }
         }
         
-        cellPointer++;
+        copyGridPointer++;
         
       }
       
       rowDone: continue; // Label to end multiple loops with goto
     }
+
+    // SDL_Log("Length of toCompute : %d", toCompute.size());
+    
+    // for(auto itr = toCompute.begin(); itr != toCompute.end(); itr++) {
+      
+    //   // SDL_Log("copyGridPointer %p, offset : %d", copyGridPointer, *itr);
+    //   neighborsCount = copyGridPointer[*itr] >> 1;
+      
+    //   if(copyGridPointer[*itr] & 1) {
+    //     if(neighborsCount != 2 && neighborsCount != 3) {
+    //       set((*itr)/gridWidth, (*itr)%gridWidth, false);
+    //     }
+    //   } else {
+    //     if(neighborsCount == 3) {
+    //       set((*itr)/gridWidth, (*itr)%gridWidth, true);
+    //     }
+    //   }
+    // }
+
+    // // Don't forget to remove the cells that are no longer useful to compute
+    // for(auto itr = toCompute.begin(); itr != toCompute.end();) {
+    //   if(grid[*itr] == 0) {
+    //     itr = toCompute.erase(itr);
+    //   } else {
+    //     itr++;
+    //   }
+    // }
+    
+    // Not compute ALL the cells, just the ones in the set
+
 }
 
 
 int main(int argc, char** argv) {
 
-    LifeGame game(500, 500, 20, 500, 500);
+    LifeGame game(500, 500, 30, 500, 500);
     game.set(20, 20, true);
     game.set(21, 20, true);
     game.set(22, 20, true);
@@ -235,7 +321,6 @@ int main(int argc, char** argv) {
 }
 
 /*
-
 Optimisation :
   - Change a 2d array into a 1d array
   - Change bool to char
@@ -257,5 +342,14 @@ Optimisation :
   ## That's good, but let's keep track of bits we need to change
     We can use a std::set or std::unordered_set to prevent duplicate elements, but this may not be fast enough
     With set we can get : iteration = O(n), insertion = O(1)
+    !!! Actually not that fast, almost not fast at all
+    Why clear the renderer each time
 
+
+
+
+    There are 3 bottlenecks:
+      - Copying the whole array once every frame : Can't find a solution
+      - Iterating through the pixels once every frame : Solved, just change the pixel when changing the array value
+      - Iterating through the whole array to compute : I can use set, but I already iterate one time, a second is not that costful
 */
