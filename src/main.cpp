@@ -309,7 +309,7 @@ void LifeGame::computeLife() {
 
 int main(int argc, char** argv) {
 
-    LifeGame game(500, 500, 30, 500, 500);
+    LifeGame game(1000, 1000, 60, 1000, 1000);
     game.set(20, 20, true);
     game.set(21, 20, true);
     game.set(22, 20, true);
